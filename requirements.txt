@@ -1,0 +1,7 @@
+configparser=6.0.0
+requests
+tk
+Adafruit-Blinka
+
+
+setuptools~=52.0.0
