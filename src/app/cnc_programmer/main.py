@@ -11,10 +11,11 @@ from lib.config_parser import CNCProgrammerConfig
 
 def run():
     try:
-        config: CNCProgrammerConfig = CNCProgrammerConfig(f"./resources/config_cnc_programmer.conf", "thule_6")
+        config: CNCProgrammerConfig = CNCProgrammerConfig(f"./resources/config_cnc_programmer.conf", "firmware_thule_two_modes", "plate_thule_4332")
         print(config)
         cnc_programmer = CNCProgrammer(config)
-        cnc_programmer.process_dsp()
+        cnc_programmer.start_programming_dsp_plate()
+        # cnc_programmer.process_dsp()
 
         # gui_run()
     except KeyboardInterrupt:
