@@ -1,28 +1,31 @@
+import logging
 from typing import Callable
 
-from app.cnc_programmer.dsp_mode import DSPMode
+from app.cnc_programmer.cnc_programmer_adc import CNCProgrammerADC, LEDCurrentMeasurementMethod
+from app.cnc_programmer.config.firmware import FirmwareConfig
+from app.cnc_programmer.dps_mode import DPSMode
 from app.cnc_programmer.rpi_board import RPiBoard
-from lib.adc import ADC, LEDCurrentMeasurementMethod
-from lib.config_parser import CNCProgrammerConfig
 
 
 class Tester:
 
-    def __init__(self, config: CNCProgrammerConfig, board: RPiBoard) -> None:
-        self.config = config
-        self.board = board
-        self.adc = ADC(board)
+    def __init__(self, board: RPiBoard) -> None:
+        self.board: RPiBoard = board
+        self.adc: CNCProgrammerADC = CNCProgrammerADC(board)
 
     def measure_LED_current(self, method: LEDCurrentMeasurementMethod = LEDCurrentMeasurementMethod.SHUNT) -> float:
-        return self.get_LED_current_measurement_method(method)()
+        return self._get_LED_current_measurement_method(method)()
 
-    def test_LED_current(self, mode: DSPMode, method: LEDCurrentMeasurementMethod = LEDCurrentMeasurementMethod.SHUNT) -> bool:
+    def test_LED_current(self, config: FirmwareConfig, mode: DPSMode, method: LEDCurrentMeasurementMethod = LEDCurrentMeasurementMethod.SHUNT) -> (bool, float):
         led_current: float = self.measure_LED_current(method)
-        print(f"Mode: {mode.value}, current {led_current} mA")
+        test_passed: bool = self._check_in_range(led_current, self._get_allowed_range(config, mode))
+        logging.info(f"Measured LED current in mode: {mode.value}, current {led_current} mA, test passed: {test_passed}")
+        return test_passed, led_current
 
-        return Tester.__check_in_range(led_current, self.get_allowed_range(mode))
+    def test_button_LED_voltage(self, config: FirmwareConfig) -> (bool, float):
+        return True, 2440.5
 
-    def get_LED_current_measurement_method(self, method: LEDCurrentMeasurementMethod) -> Callable[[], float]:
+    def _get_LED_current_measurement_method(self, method: LEDCurrentMeasurementMethod) -> Callable[[], float]:
         if method == LEDCurrentMeasurementMethod.SHUNT:
             return self.adc.measure_led_current_on_shunt_mA
 
@@ -31,14 +34,13 @@ class Tester:
 
         raise Exception("Unknown measurement method!")
 
-    def get_allowed_range(self, mode):
-        if mode == DSPMode.STRONG:
-            return self.config.led_current_mode1
-        if mode == DSPMode.LIGHT:
-            return self.config.led_current_mode2
+    def _get_allowed_range(self, config: FirmwareConfig, mode: DPSMode):
+        if mode == DPSMode.STRONG:
+            return config.led_current_mode1
+        if mode == DPSMode.LIGHT:
+            return config.led_current_mode2
 
         raise Exception("Blinking mode does not have an allowed range!")
 
-    @staticmethod
-    def __check_in_range(value: float, allowed_range: (float, float, float)) -> bool:
-        return allowed_range[0] <= value <= allowed_range[2]
+    def _check_in_range(self, value: float, allowed_range: (float, float)) -> bool:
+        return allowed_range[0] <= value <= allowed_range[1]

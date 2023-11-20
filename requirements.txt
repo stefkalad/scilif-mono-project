@@ -2,6 +2,10 @@ configparser=6.0.0
 requests
 tk
 Adafruit-Blinka
+adafruit-circuitpython-ads1x15
+keyboard
+Pillow
 
 
-setuptools~=52.0.0
+setuptools~=66.1.1
+pyserial~=3.5

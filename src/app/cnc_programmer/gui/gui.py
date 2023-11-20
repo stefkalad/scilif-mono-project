@@ -1,120 +1,441 @@
 from __future__ import annotations
 
-import tkinter as tk 
-from tkinter import BOTH, BOTTOM, DISABLED, LEFT, NORMAL, RIGHT, TOP, X, Y, YES, ttk
+import logging
+import os
+import tkinter as tk
+from enum import Enum
+from tkinter import BOTH, BOTTOM, DISABLED, LEFT, NORMAL, RIGHT, TOP, X, Y, YES, ttk, messagebox, END
 from tkinter import filedialog
+from typing import Callable
+
+from app.cnc_programmer.config.config import CNCProgrammerConfig
+from app.cnc_programmer.config.config_parser import CNCProgrammerConfigParser
+from app.cnc_programmer.config.firmware import FirmwareConfig
+from app.cnc_programmer.config.plate import PlateConfig
+from app.cnc_programmer.dps_log import DPSLog
+from app.cnc_programmer.stepper.position import Axis
 
 
-class Model:
-    def __init__(self):
-        self.config_data = {}
-        self.config_path = ''
-
-    def load_config(self, file_path):
-        with open(file_path, "r") as config_file:
-            config_data = config_file.read()
-            # Parse the config data and update the model
-            self.config_data = {}  # Replace with your parsing logic
-
-    def get_config_data(self):
-        return self.config_data
-
-    def set_config_path(self, config_path):
-        self.config_path = config_path
+class Messages(Enum):
+    ERROR_CONFIGURATION_SELECTION = "No configuration file was selected!"
+    ERROR_CONFIGURATION_PARSING = "Error in configuration file parsing!"
+    SUCCESS_CONFIGURATION_IMPORT = "Configuration was successfully imported!"
 
 
+class GUIModel:
+    def __init__(self, external: "CNCRunner") -> None:
+        self.config_path: str = ''
+        self.selected_plate_config_name: str = ''
+        self.selected_firmware_config_name: str = ''
+        self.external = external
 
-class View(ttk.Frame):
+        self._selected_move_axis: int = Axis.X.value
+
+    @property
+    def external_is_running(self) -> bool | None:
+        if self.external is not None:
+            return self.external.programming_all_plates
+        else:
+            return None
+
+    @external_is_running.setter
+    def external_is_running(self, value: bool) -> None:
+        if self.external is not None:
+            self.external.set_running(value)
+        else:
+            logging.error("External CNC runner is not defined!")
+
+    @property
+    def external_config(self) -> CNCProgrammerConfig | None:
+        if self.external is not None:
+            return self.external.external_config
+        else:
+            return None
+
+    @external_config.setter
+    def external_config(self, config: CNCProgrammerConfig):
+        if self.external is not None:
+            self.external.set_config(config)
+        else:
+            logging.error("External CNC runner is not defined!")
+
+    @property
+    def selected_firmware_config(self) -> FirmwareConfig | None:
+        if self.external is not None:
+            return self.external.selected_firmware_config
+        else:
+            return None
+    def dps_log(self, x: int, y: int) -> DPSLog:
+        if self.external is not None:
+            return self.external.dps_logs[x,y]
+        else:
+            logging.error("External CNC runner is not defined!")
+
+    @property
+    def selected_move_axis(self) -> int:
+        return self._selected_move_axis
+
+    @selected_move_axis.setter
+    def selected_move_axis(self, value: int) -> None:
+        self._selected_move_axis = value
+
+
+class GUIController:
+
+    AXIS = ["X", "Y", "Z"]
+    STEPS = [10, 5, 1]
+
+    def __init__(self, view: GUIView, external: "CNCRunner"):
+        self.model: GUIModel = GUIModel(external)
+        self.view: GUIView = view
+        self.view.root.protocol("WM_DELETE_WINDOW", self.destroy)
+
+        # bind callbacks
+        self.view.bind_browse_files_button_cb(self.evt_browse_files_clicked)
+        self.view.bind_upload_button_cb(self.evt_upload_config_clicked)
+        self.view.bind_start_button_cb(self.evt_start_clicked)
+        self.view.bind_stop_button_cb(self.evt_stop_clicked)
+        self.view.bind_move_button_cb(self.evt_move_clicked)
+        for x, y in self.view.rectangles.keys():
+            self.view.bind_canvas_click_cb(x, y, self.evt_show_dialog)
+
+        for axis in range(len(GUIController.AXIS)):
+            self.view.bind_move_axis_button_cb(lambda _axis=axis: self.evt_move_axis_clicked(_axis), axis)
+        for step in GUIController.STEPS:
+            self.view.bind_move_distance_button_cb(lambda _step=step: self.evt_move_distance_clicked(_step), step)
+            self.view.bind_move_distance_button_cb(lambda _step=step: self.evt_move_distance_clicked(-_step), -step)
+
+        # initial setup
+        self.view.upload_button.config(state=DISABLED)
+        self.view.start_button.config(state=DISABLED)
+        self.view.stop_button.config(state=DISABLED)
+        self.view.move_axis_buttons[self.model.selected_move_axis].config(style="Accent.TButton")
+            #toggle visibility
+        self.view.matrix_frame.grid_forget()
+        self.view.error_log_frame.grid_forget()
+        self.view.move_frame.grid_forget()
+
+        # load default config
+        # ???TODO: uncomment
+        ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+        default_config_path: str = f"{ROOT_DIR}/../resources/config_cnc_programmer.conf"
+        self.view.config_entry_text.set(default_config_path)
+        self.model.config_path = default_config_path
+        self.evt_upload_config_clicked()
+
+    def destroy(self):
+        print("Stoping")
+        self.view.root.destroy()
+        if self.model.external is not None:
+            self.model.external.destroy()
+
+
+    def evt_show_dialog(self, x, y) -> None:
+        dps_log = self.model.dps_log(x, y)
+        if not dps_log: return
+
+        messagebox.showinfo(f"OK [{x},{y}]" if dps_log.operation_successful else f"ERROR [{x},{y}]",
+                            self._format_dps_ok_msg(dps_log) if dps_log.operation_successful else self._format_dps_error_msg(dps_log))
+
+    def evt_browse_files_clicked(self) -> None:
+        # fd = filedialog.FileDialog(root)
+        # file_path = fd.go(pattern="*.conf")
+        ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+        file_path = filedialog.askopenfilename(initialdir=f"{ROOT_DIR}/../resources", initialfile="config_cnc_programmer.conf", filetypes=[("Config Files", "*.conf")])
+        if not file_path or not len(file_path):
+            # update view
+            self.view.upload_message.config(text=Messages.ERROR_CONFIGURATION_SELECTION.value, foreground="red")
+            return
+        # update model
+        self.model.config_path = file_path
+        # update view
+        self.view.config_entry_text.set(file_path)
+        self.view.upload_button.config(state=NORMAL)
+
+    def evt_upload_config_clicked(self) -> None:
+        try:
+            config = CNCProgrammerConfigParser(self.model.config_path).parse_config()
+            # update view
+            self._set_view_on_upload(list(config.plate_configs.values())[0])
+            # propagate to CNC runner
+            self.model.external_config = config
+        except Exception as e:
+            print(e)
+            # update view
+            self.view.upload_message.config(text=Messages.ERROR_CONFIGURATION_PARSING.value, foreground="red")
+            return
+
+    def evt_start_clicked(self) -> None:
+        print("START clicked")
+        # update view
+        self._set_view_on_start()
+        # update model (external)
+        self.model.external_is_running = True
+
+    def evt_stop_clicked(self) -> None:
+        print("STOP clicked")
+        # if self.model.external_is_running:
+        # update view
+        self._set_view_on_stop()
+        # update model (external)
+        self.model.external_is_running = False
+
+    def evt_move_clicked(self) -> None:
+        # update view
+        self._set_view_on_move()
+
+    def evt_move_axis_clicked(self, axis: int) -> None:
+        #update model
+        self.model.selected_move_axis = axis
+        #update view
+        for i in range(len(GUIController.AXIS)):
+            self.view.move_axis_buttons[i].config(style="Accent.TButton" if i == axis else "TButton")
+
+    def evt_move_distance_clicked(self, step: int) -> None:
+        logging.info(f"Moving {step} mm in axis: {self.model.selected_move_axis}!")
+        # call external -- BUSY wait
+        self.model.external.move(Axis(self.model.selected_move_axis), step)
+        # disable other buttons
+
+        # enable other buttons
+
+    def ex_evt_update_dps_log(self, dps_log: DPSLog) -> None:
+        #TODO:
+        # color: str = "green" if dps_log.operation_successful else "red"
+        color: str = "green"
+        self.view.rectangles[dps_log.x, dps_log.y].config(bg=color)
+        if not dps_log.operation_successful:
+            self.view.error_log.insert(END, self._format_dps_error_msg(dps_log))
+
+    def ex_evt_process_completed(self) -> None:
+        pass
+
+    def ex_evt_process_interrupted(self) -> None:
+        pass
+
+    def _set_view_on_upload(self, plate_config: PlateConfig) -> None:
+        self.view.upload_message.config(text=Messages.SUCCESS_CONFIGURATION_IMPORT.value, foreground="green")
+        self.view.start_button.config(state=NORMAL)
+
+        self.view.column_entry.insert(0, plate_config.columns)
+        self.view.row_entry.insert(0, plate_config.rows)
+        self.view.column_offset_entry.insert(0, plate_config.x_offset)
+        self.view.row_offset_entry.insert(0, plate_config.y_offset)
+        self.view.column_spacing_entry.insert(0, plate_config.x_spacing)
+        self.view.row_spacing_entry.insert(0, plate_config.y_spacing)
+
+    def _set_view_on_start(self):
+        # toggle button state
+        self.view.start_button.config(state=DISABLED)
+        self.view.stop_button.config(state=NORMAL)
+        self.view.move_button.config(state=DISABLED)
+        # toggle frame visibility
+        self.view.config_frame.grid_forget()
+        self.view.plate_config_frame.grid_forget()
+        self.view.move_frame.grid_forget()
+        self.view.move_button.grid_forget()
+        self.view.matrix_frame.grid(row=1, column=0, sticky="ns")
+        # self.view.error_log_frame.grid(row=1, column=1, sticky="nsew")
+
+    def _set_view_on_stop(self):
+        # toggle button state
+        self.view.start_button.config(state=NORMAL)
+        self.view.stop_button.config(state=DISABLED)
+        self.view.move_button.config(state=NORMAL)
+        # toggle frame visibility
+        self.view.config_frame.grid(row=1, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
+        self.view.plate_config_frame.grid(row=2, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
+        self.view.move_button.grid(row=0, column=2, padx=10, pady=10, sticky="nsew")
+        self.view.matrix_frame.grid_forget()
+        self.view.error_log_frame.grid_forget()
+        self.view.application_frame_content.grid_forget()
+
+
+
+    def _set_view_on_move(self):
+        # toggle button state
+        self.view.start_button.config(state=NORMAL)
+        self.view.stop_button.config(state=DISABLED)
+        self.view.move_button.config(state=DISABLED)
+        # toggle frame visibility
+        self.view.plate_config_frame.grid_forget()
+        self.view.matrix_frame.grid_forget()
+        self.view.error_log_frame.grid_forget()
+        self.view.move_frame.grid(row=3, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="ns")
+
+
+    def _format_dps_ok_msg(self, dps_log: DPSLog) -> str:
+        return (f"[programming]: fw: {self.model.external_config.firmware_default_path}, output message: {dps_log.fw_upload_message}\n" +
+                f"[testing - LED current]: mode 1: {dps_log.led_current_mode1} mA, mode 2: {dps_log.led_current_mode2} mA\n" +
+                f"[testing - button LED voltage]:  {dps_log.button_led_voltage}\n")
+
+    def _format_dps_error_msg(self, dps_log: DPSLog) -> str:
+        if not dps_log.fw_uploaded:
+            return self._format_fw_upload_error_msg(dps_log)
+        else:
+            message: str = ''
+            if not dps_log.led_current_mode1_passed:
+                message += self._format_led_current_error_msg(dps_log, self.model.selected_firmware_config.led_current_mode1, 1)
+            if not dps_log.led_current_mode2_passed:
+                message += self._format_led_current_error_msg(dps_log, self.model.selected_firmware_config.led_current_mode2, 2)
+            if not dps_log.button_led_voltage_passed:
+                message += self._format_button_led_voltage_error_msg(dps_log, self.model.selected_firmware_config.button_led_voltage)
+            return message
+
+    def _format_fw_upload_error_msg(self, dps_log: DPSLog) -> str:
+        return f"ERROR [{dps_log.x},{dps_log.y}][programming]: {dps_log.fw_upload_message}\n"
+    def _format_led_current_error_msg(self, dps_log: DPSLog, spec: (int,int), mode: int=1) -> str:
+        return f"ERROR [{dps_log.x},{dps_log.y}] [testing]: LED current - mode {mode} out of spec {dps_log.led_current_mode2:.0f} mA x ({spec[0]},{spec[1]}) mA\n"
+
+    def _format_button_led_voltage_error_msg(self, dps_log: DPSLog, spec: (int,int)) -> str:
+        return f"ERROR [{dps_log.x},{dps_log.y}] [testing]: Button LED voltage out of spec {dps_log.button_led_voltage:.0f} mV x ({spec[0]}, {spec[1]}) mV\n"
+
+
+
+
+
+class GUIView(ttk.Frame):
     FG_COLOR = "#eaf205"
     PADX = (15, 15)
     PADY = (15, 15)
+    DPS_HEIGHT_PX: int = 50
+    DPS_WIDTH_PX: int = 100
+    MIN_SIZE_PX: int = 1300
 
     def __init__(self, root):
         self.root = root
+        self.root.maxsize(self.root.winfo_screenwidth(), root.winfo_screenheight())
         ttk.Frame.__init__(self)
+        self.grid(row=0, column=0, sticky='ns')
+        #self.pack(fill="both", expand=True)
         # super().__init__(root)
 
-        # for index in [0, 1, 2]:
-        #     self.columnconfigure(index=index, weight=1)
-        #     self.rowconfigure(index=index, weight=1)
-        
+        self.rectangles: dict[(int, int), tk.Canvas] = {}
+        self.move_axis_buttons: dict[int, ttk.Button] = {}
+        self.move_distance_buttons: dict[int, ttk.Button] = {}
 
-        self.label = ttk.Label(self, text="SCILIF CNC Programmer", justify="center", font=("-size", 16, "-weight", "bold"))
-        # self.label.grid(row=0, column=0, pady=10, columnspan=2)
-        
+        self.label = ttk.Label(self, text="SCILIF CNC Programmer", justify="center", font=("-size", 20, "-weight", "bold"))
+        self.label.grid(row=0, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="ns")
+
         self.config_frame = ttk.LabelFrame(self, text="Select Configuration", padding=(20, 10))
-        self.config_frame.grid(row=1, column=0, padx=View.PADX, pady=View.PADY, sticky="nsew")
-        
+        self.config_frame.grid(row=1, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
+        self._create_configuration_frame_widgets()
+
+
+        self.plate_config_frame = ttk.LabelFrame(self, text="Plate settings & Testing", padding=(20, 10))
+        self.plate_config_frame.grid(row=2, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
+        self._create_plate_config_frame_widgets()
+
+
+        self.application_frame = ttk.LabelFrame(self, text="Application Control", padding=(20, 10))
+        self.application_frame.grid(row=3, column=0,  padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
+        self._create_application_frame_widgets()
+
+    def _create_configuration_frame_widgets(self) -> None:
+        COLUMN_WEIGHTS = [0, 1, 0]
 
         self.config_label = ttk.Label(self.config_frame, text="Upload Config File:")
-        self.config_label.grid(row=1, column=0, padx=View.PADX, pady=View.PADY, sticky="nsew")
+        self.config_label.grid(row=0, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
 
         self.config_entry_text = tk.StringVar()
         self.config_entry = ttk.Entry(self.config_frame, textvariable=self.config_entry_text, state=DISABLED)
-        self.config_entry.grid(row=1, column=1, columnspan=2, padx=View.PADX, pady=View.PADY, sticky="nsew")
+        self.config_entry.grid(row=0, column=1, columnspan=2, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
 
         self.browse_files_button = ttk.Button(self.config_frame, text="Browse Files")
-        self.browse_files_button.grid(row=1, column=3, padx=10, pady=10, sticky="nsew")
+        self.browse_files_button.grid(row=0, column=3, padx=10, pady=10, sticky="nsew")
 
-        self.upload_button = ttk.Button(self.config_frame, text="Upload", style="Accent.TButton")
-        self.upload_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        self.upload_button = ttk.Button(self.config_frame, text="Upload")
+        self.upload_button.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
 
+        self.upload_message = ttk.Label(self.config_frame, text="", anchor="center")
+        self.upload_message.grid(row=2, columnspan=3, padx=10, pady=10, sticky="ew")
 
-
-        self.product_frame = ttk.LabelFrame(self, text="Select Product", padding=(20, 10))
-        # self.product_frame.pack(expand=YES, fill=BOTH)
-        self.product_frame.grid(row=3, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
-
-        self.product_code_label = ttk.Label(self.product_frame, text="Product Code:")
-        self.product_code_label.grid(row=3,column=0)
-
-        self.product_code_entry = ttk.Entry(self.product_frame)
-        self.product_code_entry.grid(row=3,column=1)
+        for index, weight in enumerate(COLUMN_WEIGHTS):
+            self.config_frame.columnconfigure(index, weight=weight)
 
 
+    def _create_plate_config_frame_widgets(self):
+        self.column_label, self.column_entry = self._generate_label_entry_pair(self.plate_config_frame, "Columns (N):", 0, 0, )
+        self.row_label, self.row_entry = self._generate_label_entry_pair(self.plate_config_frame, "Rows (M):", 0, 2)
+
+        self.column_spacing_label, self.column_spacing_entry = self._generate_label_entry_pair(self.plate_config_frame, "Spacing (X) [mm]:", 1, 0)
+        self.row_spacing_label, self.row_spacing_entry = self._generate_label_entry_pair(self.plate_config_frame, "Spacing (Y) [mm]:", 1, 2)
+
+        self.column_offset_label, self.column_offset_entry = self._generate_label_entry_pair(self.plate_config_frame, "Offset (X) of first DPS [mm]:", 2, 0)
+        self.row_offset_label, self.row_offset_entry = self._generate_label_entry_pair(self.plate_config_frame, "Offset (Y) of first DPS [mm]:", 2, 2)
 
 
-        self.settings_frame = ttk.LabelFrame(self, text="Settings", padding=(20, 10))
-        self.settings_frame.grid(row=4, column=0, padx=(10, 10), pady=(10, 10), sticky="nsew")
+    def _create_application_frame_widgets(self):
+        self.start_button = ttk.Button(self.application_frame, text="START")
+        self.start_button.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.stop_button = ttk.Button(self.application_frame, text="STOP")
+        self.stop_button.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        self.move_button = ttk.Button(self.application_frame, text="MOVE")
+        self.move_button.grid(row=0, column=2, padx=10, pady=10, sticky="nsew")
+        self.application_frame.columnconfigure((0, 1), weight=1, uniform="column")
 
-        self.row_label, self.row_entry = self.generate_label_entry_pair(self.settings_frame, "Rows (M):", 4, 0)
-        self.column_label, self.column_entry = self.generate_label_entry_pair(self.settings_frame, "Columns (N):", 4, 2)
+        self.application_frame_content = ttk.Frame(self.application_frame)
+        self.application_frame_content.grid(row=1, column=0, columnspan=3, padx=GUIView.PADX, pady=GUIView.PADY, sticky="nsew")
 
-        self.row_space_label, self.row_space_entry = self.generate_label_entry_pair(self.settings_frame, "Row space [mm]:", 5, 0)
-        self.column_space_label, self.column_space_entry = self.generate_label_entry_pair(self.settings_frame, "Column space [mm]:", 5, 2)
+        self._create_application_frame_matrix_error_log_widgets()
+        self._create_application_frame_move_widgets()
 
-        # self.settings_frame.pack(expand=YES, fill=BOTH)
-        
+    def _create_application_frame_matrix_error_log_widgets(self):
+
+        self.matrix_frame = ttk.Frame(self.application_frame_content)
+        self.matrix_frame.grid(row=0, column=0, sticky="ns")
+        self.add_square_matrix_row(self.matrix_frame, 5, 10)
+
+        self.error_log_frame = ttk.Frame(self.application_frame)
+        self.error_log_frame.grid(row=0, column=1, sticky="nsew")
+
+        self.error_log = tk.Text(self.error_log_frame, wrap="none")
+        self.error_log.grid(row=0, column=0, sticky="nsew")
+        self.error_log_scrollbar = ttk.Scrollbar(self.error_log_frame, orient="vertical", command=self.error_log.yview)
+        self.error_log.config(yscrollcommand=self.error_log_scrollbar.set)
+
+        scroll_text = lambda event: self.error_log.yview_scroll(-1 * (event.delta // 120), "units")
+        self.error_log.bind("<MouseWheel>", scroll_text)
+
+    def _create_application_frame_move_widgets(self):
+
+        self.move_frame = ttk.Frame(self.application_frame_content)
+        self.move_frame.grid(row=0, column=0, padx=GUIView.PADX, pady=GUIView.PADY, sticky="ns")
+
+        for i, axis in enumerate(GUIController.AXIS):
+            button = ttk.Button(self.move_frame, text=axis)
+            button.grid(row=0, column=i, padx=GUIView.PADX, pady=GUIView.PADY,  sticky="nsew")
+            self.move_axis_buttons[i] = button
+
+        for i, step in enumerate(GUIController.STEPS):
+            button = ttk.Button(self.move_frame, text=f"+{step} mm")
+            button.grid(row=1, column=i*2, padx=GUIView.PADX, pady=GUIView.PADY,  sticky="nsew")
+            self.move_distance_buttons[step] = button
+            button = ttk.Button(self.move_frame, text=f"-{step} mm")
+            button.grid(row=1, column=i*2 +1, padx=GUIView.PADX, pady=GUIView.PADY,  sticky="nsew")
+            self.move_distance_buttons[-step] = button
 
 
-        # self.start_button = tk.Button(root, text="START")
-        # # self.start_button.grid(row=3,column=0)
 
-        # self.pause_button = tk.Button(root, text="PAUSE")
-        # self.pause_button.grid(row=3,column=1)
+    def add_square_matrix_row(self, matrix_frame: ttk.Frame, columns: int, rows: int):
+        for row in range(rows):
+            for column in range(columns):
+                canvas = tk.Canvas(matrix_frame, width=GUIView.DPS_WIDTH_PX, height=GUIView.DPS_HEIGHT_PX, bg="grey")
+                canvas.grid(row=row, column=column, sticky="nsew")
+                self.rectangles[(column, rows - (row+1))] = canvas
 
-        # self.info_log_label = tk.Label(root, text="Information Log:", bg=SCILIF_BLACK, fg=SCILIF_YELLOW)
-
-        # self.info_log_text = tk.Text(root, height=5, width=40, bg=SCILIF_BLACK, fg=SCILIF_YELLOW)
-
-        # self.malfunction_log_label = tk.Label(root, text="Malfunction Log:", bg=SCILIF_BLACK, fg=SCILIF_YELLOW)
-
-        # self.malfunction_log_text = tk.Text(root, height=5, width=40, bg=SCILIF_BLACK, fg=SCILIF_YELLOW)
-        
-    
-    def set_controller(self, controller: Controller): 
+    def set_controller(self, controller: GUIController):
         self.controller = controller
-    
-    def generate_label_entry_pair(self, frame, label_text, row, column) -> (ttk.Label, ttk.Entry):
+
+    def _generate_label_entry_pair(self, frame, label_text, row, column, state=NORMAL) -> (ttk.Label, ttk.Entry):
         label = ttk.Label(frame, text=label_text)
-        label.grid(row=row,column=column, padx=View.PADX, pady=View.PADY)
-        entry = ttk.Entry(frame)
-        entry.grid(row=row,column=column+1, padx=View.PADX, pady=View.PADY)
+        label.grid(row=row, column=column, padx=GUIView.PADX, pady=GUIView.PADY)
+        entry = ttk.Entry(frame, state=state)
+        entry.grid(row=row, column=column + 1, padx=GUIView.PADX, pady=GUIView.PADY)
         return (label, entry)
 
-
-    def bind_config_entry_focus_in_cb(self, callback):
-        self.config_entry.bind("<FocusIn>", callback)
+    # def bind_config_entry_focus_in_cb(self, callback):
+    #     self.config_entry.bind("<FocusIn>", callback)
 
     def bind_upload_button_cb(self, callback):
         self.upload_button.config(command=callback)
@@ -122,11 +443,25 @@ class View(ttk.Frame):
     def bind_browse_files_button_cb(self, callback):
         self.browse_files_button.config(command=callback)
 
-    # def bind_start_button_cb(self, callback):
-    #     self.start_button.config(command=callback)
+    def bind_start_button_cb(self, callback):
+        self.start_button.config(command=callback)
 
-    # def bind_pause_button_cb(self, callback):
-    #     self.pause_button.config(command=callback)
+    def bind_stop_button_cb(self, callback):
+        self.stop_button.config(command=callback)
+
+    def bind_canvas_click_cb(self, x: int, y: int, callback: Callable[[int, int], None]):
+        self.rectangles[(x, y)].bind("<Button-1>", lambda evt, _x=x, _y=y: callback(_x, _y))
+
+    def bind_move_button_cb(self, callback):
+        self.move_button.config(command=callback)
+
+    def bind_move_axis_button_cb(self, callback, axis: int):
+
+        self.move_axis_buttons[axis].config(command=callback)
+
+    def bind_move_distance_button_cb(self, callback, distance: int):
+        self.move_distance_buttons[distance].config(command=callback)
+
 
     # def update_info_log(self, text):
     #     self.info_log_text.insert(tk.END, text)
@@ -135,366 +470,38 @@ class View(ttk.Frame):
     #     self.malfunction_log_text.insert(tk.END, text)
 
 
-class Controller:
-    def __init__(self, model: Model, view: View):
-        self.model = model
-        self.view = view
+def create_root_window() -> tk.Tk:
 
-        self.is_running = False
-
-        # Initial setup
-        self.view.upload_button.config(state=DISABLED)
-
-        # Bind callbacks
-        self.view.bind_upload_button_cb(self.upload_config)
-        self.view.bind_browse_files_button_cb(self.browse_files)
-        # self.view.bind_start_button_cb(self.start)
-        # self.view.bind_pause_button_cb(self.pause)
-
-
-    def browse_files(self):
-        root = self.view.root
-
-        # fd = filedialog.FileDialog(root)
-        # file_path = fd.go(pattern="*.conf")
-
-
-        file_path = filedialog.askopenfilename(master=root,filetypes=[("Config Files", "*.conf")])
-        if file_path and len(file_path):
-            # update model
-            self.model.load_config(file_path)
-            self.model.set_config_path(file_path)
-            
-            # update view 
-            self.view.config_entry_text.set(file_path)
-            self.view.upload_button.config(state=NORMAL)
-
-    def upload_config(self):
-
-        print ("Upload...")
-
-        
-
-
-
-    def start(self):
-        if not self.is_running:
-            self.is_running = True
-            self.view.update_info_log("Application started...\n")
-
-    def pause(self):
-        if self.is_running:
-            self.is_running = False
-            self.view.update_info_log("Application paused...\n")
-
-
-
-    
-
-
-def run():
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
     root = tk.Tk()
-    root.title('Tkinter MVC Demo')
-    root.tk.call("source", "azure.tcl")
+    root.title('SCILIF CNC PROGRAMMER')
+    root.tk.call("source", f"{ROOT_DIR}/../../../lib/theme/azure.tcl")
     root.tk.call("set_theme", "dark")
-
-    model = Model()
-    view = View(root)
-    view.pack(fill="both", expand=True)
-    controller = Controller(model, view)
-    view.set_controller(controller)
-
 
     # Set a minsize for the window, and place it in the middle
     root.update()
+    root.grid_columnconfigure(0, minsize=GUIView.MIN_SIZE_PX, weight=1)
     root.minsize(root.winfo_width(), root.winfo_height())
-    x_cordinate = int((root.winfo_screenwidth() / 2) - (root.winfo_width() / 2))
-    y_cordinate = int((root.winfo_screenheight() / 2) - (root.winfo_height() / 2))
-    root.geometry("+{}+{}".format(x_cordinate, y_cordinate-20))
+    root.maxsize(root.winfo_screenwidth(), root.winfo_screenheight())
+    x_coordinate = int((root.winfo_screenwidth() / 2) - (root.winfo_width() / 2))
+    y_coordinate = int((root.winfo_screenheight() / 2) - (root.winfo_height() / 2))
+    # root.geometry(f"+{x_coordinate}+{y_coordinate - 20}")
 
+    w, h = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry("%dx%d+0+0" % (w, h-20))
     root.bind_all('<Control-c>', lambda _: root.destroy())
-    root.mainloop()
+    return root
 
-    
-    
 
-class View2(ttk.Frame):
-    def __init__(self, parent):
-        ttk.Frame.__init__(self)
-
-        # Make the app responsive
-        for index in [0, 1, 2]:
-            self.columnconfigure(index=index, weight=1)
-            self.rowconfigure(index=index, weight=1)
-
-        # Create value lists
-        self.option_menu_list = ["", "OptionMenu", "Option 1", "Option 2"]
-        self.combo_list = ["Combobox", "Editable item 1", "Editable item 2"]
-        self.readonly_combo_list = ["Readonly combobox", "Item 1", "Item 2"]
-
-        # Create control variables
-        self.var_0 = tk.BooleanVar()
-        self.var_1 = tk.BooleanVar(value=True)
-        self.var_2 = tk.BooleanVar()
-        self.var_3 = tk.IntVar(value=2)
-        self.var_4 = tk.StringVar(value=self.option_menu_list[1])
-        self.var_5 = tk.DoubleVar(value=75.0)
-
-        # Create widgets :)
-        self.setup_widgets()
-
-    def setup_widgets(self):
-        # Create a Frame for the Checkbuttons
-        self.check_frame = ttk.LabelFrame(self, text="Checkbuttons", padding=(20, 10))
-        self.check_frame.grid(
-            row=0, column=0, padx=(20, 10), pady=(20, 10), sticky="nsew"
-        )
-
-        # Checkbuttons
-        self.check_1 = ttk.Checkbutton(
-            self.check_frame, text="Unchecked", variable=self.var_0
-        )
-        self.check_1.grid(row=0, column=0, padx=5, pady=10, sticky="nsew")
-
-        self.check_2 = ttk.Checkbutton(
-            self.check_frame, text="Checked", variable=self.var_1
-        )
-        self.check_2.grid(row=1, column=0, padx=5, pady=10, sticky="nsew")
-
-        self.check_3 = ttk.Checkbutton(
-            self.check_frame, text="Third state", variable=self.var_2
-        )
-        self.check_3.state(["alternate"])
-        self.check_3.grid(row=2, column=0, padx=5, pady=10, sticky="nsew")
-
-        self.check_4 = ttk.Checkbutton(
-            self.check_frame, text="Disabled", state="disabled"
-        )
-        self.check_4.state(["disabled !alternate"])
-        self.check_4.grid(row=3, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Separator
-        self.separator = ttk.Separator(self)
-        self.separator.grid(row=1, column=0, padx=(20, 10), pady=10, sticky="ew")
-
-        # Create a Frame for the Radiobuttons
-        self.radio_frame = ttk.LabelFrame(self, text="Radiobuttons", padding=(20, 10))
-        self.radio_frame.grid(row=2, column=0, padx=(20, 10), pady=10, sticky="nsew")
-
-        # Radiobuttons
-        self.radio_1 = ttk.Radiobutton(
-            self.radio_frame, text="Unselected", variable=self.var_3, value=1
-        )
-        self.radio_1.grid(row=0, column=0, padx=5, pady=10, sticky="nsew")
-        self.radio_2 = ttk.Radiobutton(
-            self.radio_frame, text="Selected", variable=self.var_3, value=2
-        )
-        self.radio_2.grid(row=1, column=0, padx=5, pady=10, sticky="nsew")
-        self.radio_4 = ttk.Radiobutton(
-            self.radio_frame, text="Disabled", state="disabled"
-        )
-        self.radio_4.grid(row=3, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Create a Frame for input widgets
-        self.widgets_frame = ttk.Frame(self, padding=(0, 0, 0, 10))
-        self.widgets_frame.grid(
-            row=0, column=1, padx=10, pady=(30, 10), sticky="nsew", rowspan=3
-        )
-        self.widgets_frame.columnconfigure(index=0, weight=1)
-
-        # Entry
-        self.entry = ttk.Entry(self.widgets_frame)
-        self.entry.insert(0, "Entry")
-        self.entry.grid(row=0, column=0, padx=5, pady=(0, 10), sticky="ew")
-
-        # Spinbox
-        self.spinbox = ttk.Spinbox(self.widgets_frame, from_=0, to=100, increment=0.1)
-        self.spinbox.insert(0, "Spinbox")
-        self.spinbox.grid(row=1, column=0, padx=5, pady=10, sticky="ew")
-
-        # Combobox
-        self.combobox = ttk.Combobox(self.widgets_frame, values=self.combo_list)
-        self.combobox.current(0)
-        self.combobox.grid(row=2, column=0, padx=5, pady=10, sticky="ew")
-
-        # Read-only combobox
-        self.readonly_combo = ttk.Combobox(
-            self.widgets_frame, state="readonly", values=self.readonly_combo_list
-        )
-        self.readonly_combo.current(0)
-        self.readonly_combo.grid(row=3, column=0, padx=5, pady=10, sticky="ew")
-
-        # Menu for the Menubutton
-        self.menu = tk.Menu(self)
-        self.menu.add_command(label="Menu item 1")
-        self.menu.add_command(label="Menu item 2")
-        self.menu.add_separator()
-        self.menu.add_command(label="Menu item 3")
-        self.menu.add_command(label="Menu item 4")
-
-        # Menubutton
-        self.menubutton = ttk.Menubutton(
-            self.widgets_frame, text="Menubutton", menu=self.menu, direction="below"
-        )
-        self.menubutton.grid(row=4, column=0, padx=5, pady=10, sticky="nsew")
-
-        # OptionMenu
-        self.optionmenu = ttk.OptionMenu(
-            self.widgets_frame, self.var_4, *self.option_menu_list
-        )
-        self.optionmenu.grid(row=5, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Button
-        self.button = ttk.Button(self.widgets_frame, text="Button")
-        self.button.grid(row=6, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Accentbutton
-        self.accentbutton = ttk.Button(
-            self.widgets_frame, text="Accent button", style="Accent.TButton"
-        )
-        self.accentbutton.grid(row=7, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Togglebutton
-        self.togglebutton = ttk.Checkbutton(
-            self.widgets_frame, text="Toggle button", style="Toggle.TButton"
-        )
-        self.togglebutton.grid(row=8, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Switch
-        self.switch = ttk.Checkbutton(
-            self.widgets_frame, text="Switch", style="Switch.TCheckbutton"
-        )
-        self.switch.grid(row=9, column=0, padx=5, pady=10, sticky="nsew")
-
-        # Panedwindow
-        self.paned = ttk.PanedWindow(self)
-        self.paned.grid(row=0, column=2, pady=(25, 5), sticky="nsew", rowspan=3)
-
-        # Pane #1
-        self.pane_1 = ttk.Frame(self.paned, padding=5)
-        self.paned.add(self.pane_1, weight=1)
-
-        # Scrollbar
-        self.scrollbar = ttk.Scrollbar(self.pane_1)
-        self.scrollbar.pack(side="right", fill="y")
-
-        # Treeview
-        self.treeview = ttk.Treeview(
-            self.pane_1,
-            selectmode="browse",
-            yscrollcommand=self.scrollbar.set,
-            columns=(1, 2),
-            height=10,
-        )
-        self.treeview.pack(expand=True, fill="both")
-        self.scrollbar.config(command=self.treeview.yview)
-
-        # Treeview columns
-        self.treeview.column("#0", anchor="w", width=120)
-        self.treeview.column(1, anchor="w", width=120)
-        self.treeview.column(2, anchor="w", width=120)
-
-        # Treeview headings
-        self.treeview.heading("#0", text="Column 1", anchor="center")
-        self.treeview.heading(1, text="Column 2", anchor="center")
-        self.treeview.heading(2, text="Column 3", anchor="center")
-
-        # Define treeview data
-        treeview_data = [
-            ("", 1, "Parent", ("Item 1", "Value 1")),
-            (1, 2, "Child", ("Subitem 1.1", "Value 1.1")),
-            (1, 3, "Child", ("Subitem 1.2", "Value 1.2")),
-            (1, 4, "Child", ("Subitem 1.3", "Value 1.3")),
-            (1, 5, "Child", ("Subitem 1.4", "Value 1.4")),
-            ("", 6, "Parent", ("Item 2", "Value 2")),
-            (6, 7, "Child", ("Subitem 2.1", "Value 2.1")),
-            (6, 8, "Sub-parent", ("Subitem 2.2", "Value 2.2")),
-            (8, 9, "Child", ("Subitem 2.2.1", "Value 2.2.1")),
-            (8, 10, "Child", ("Subitem 2.2.2", "Value 2.2.2")),
-            (8, 11, "Child", ("Subitem 2.2.3", "Value 2.2.3")),
-            (6, 12, "Child", ("Subitem 2.3", "Value 2.3")),
-            (6, 13, "Child", ("Subitem 2.4", "Value 2.4")),
-            ("", 14, "Parent", ("Item 3", "Value 3")),
-            (14, 15, "Child", ("Subitem 3.1", "Value 3.1")),
-            (14, 16, "Child", ("Subitem 3.2", "Value 3.2")),
-            (14, 17, "Child", ("Subitem 3.3", "Value 3.3")),
-            (14, 18, "Child", ("Subitem 3.4", "Value 3.4")),
-            ("", 19, "Parent", ("Item 4", "Value 4")),
-            (19, 20, "Child", ("Subitem 4.1", "Value 4.1")),
-            (19, 21, "Sub-parent", ("Subitem 4.2", "Value 4.2")),
-            (21, 22, "Child", ("Subitem 4.2.1", "Value 4.2.1")),
-            (21, 23, "Child", ("Subitem 4.2.2", "Value 4.2.2")),
-            (21, 24, "Child", ("Subitem 4.2.3", "Value 4.2.3")),
-            (19, 25, "Child", ("Subitem 4.3", "Value 4.3")),
-        ]
-
-        # Insert treeview data
-        for item in treeview_data:
-            self.treeview.insert(
-                parent=item[0], index="end", iid=item[1], text=item[2], values=item[3]
-            )
-            if item[0] == "" or item[1] in {8, 21}:
-                self.treeview.item(item[1], open=True)  # Open parents
-
-        # Select and scroll
-        self.treeview.selection_set(10)
-        self.treeview.see(7)
-
-        # Notebook, pane #2
-        self.pane_2 = ttk.Frame(self.paned, padding=5)
-        self.paned.add(self.pane_2, weight=3)
-
-        # Notebook, pane #2
-        self.notebook = ttk.Notebook(self.pane_2)
-        self.notebook.pack(fill="both", expand=True)
-
-        # Tab #1
-        self.tab_1 = ttk.Frame(self.notebook)
-        for index in [0, 1]:
-            self.tab_1.columnconfigure(index=index, weight=1)
-            self.tab_1.rowconfigure(index=index, weight=1)
-        self.notebook.add(self.tab_1, text="Tab 1")
-
-        # Scale
-        self.scale = ttk.Scale(
-            self.tab_1,
-            from_=100,
-            to=0,
-            variable=self.var_5,
-            command=lambda event: self.var_5.set(self.scale.get()),
-        )
-        self.scale.grid(row=0, column=0, padx=(20, 10), pady=(20, 0), sticky="ew")
-
-        # Progressbar
-        self.progress = ttk.Progressbar(
-            self.tab_1, value=0, variable=self.var_5, mode="determinate"
-        )
-        self.progress.grid(row=0, column=1, padx=(10, 20), pady=(20, 0), sticky="ew")
-
-        # Label
-        self.label = ttk.Label(
-            self.tab_1,
-            text="Azure theme for ttk",
-            justify="center",
-            font=("-size", 15, "-weight", "bold"),
-        )
-        self.label.grid(row=1, column=0, pady=10, columnspan=2)
-
-        # Tab #2
-        self.tab_2 = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_2, text="Tab 2")
-
-        # Tab #3
-        self.tab_3 = ttk.Frame(self.notebook)
-        self.notebook.add(self.tab_3, text="Tab 3")
-
-        # Sizegrip
-        self.sizegrip = ttk.Sizegrip(self)
-        self.sizegrip.grid(row=100, column=100, padx=(0, 5), pady=(0, 5))
-
-    
 
 if __name__ == "__main__":
-    run()
 
+    logging.getLogger().setLevel(logging.INFO)
+
+    root: tk.Tk = create_root_window()
+    view = GUIView(root)
+    controller = GUIController(view, None)
+    view.set_controller(controller)
+
+    root.mainloop()

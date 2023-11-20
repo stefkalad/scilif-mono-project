@@ -18,11 +18,15 @@ class PositionInSteps:
     def set(self, axis: Axis, value: int) -> None:
         self.pos[axis.value] = value
 
+    def reset(self) -> None:
+        self.pos = [0, 0, 0]
+
     def increment(self, axis: Axis, increment: int) -> None:
         self.pos[axis.value] = self.pos[axis.value] + increment
 
     def to_mm(self, axis: Axis, steps_per_mm: int) -> float:
         return self.pos[axis.value]/steps_per_mm
+
 
     def __str__(self):
         return f'Pos_step({self.pos[0], self.pos[1], self.pos[2]})'

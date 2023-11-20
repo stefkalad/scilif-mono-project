@@ -69,7 +69,11 @@ namespace eval ttk::theme::azure-dark {
                     AccentButton.label -side left -expand true
                 } 
             }
+            AccentButton.button.Disabled {
+                    -background gray
+            }
         }
+
 
         ttk::style layout TCheckbutton {
             Checkbutton.button -children {
@@ -256,6 +260,7 @@ namespace eval ttk::theme::azure-dark {
 
         # AccentButton
         ttk::style configure Accent.TButton -padding {8 4 8 4} -width -10 -anchor center -background $colors(-bg)
+        ttk::style map Accent.TButton -background [list disabled gray]
 
         ttk::style element create AccentButton.button image \
             [list $I(rect-accent) \

@@ -1,5 +1,6 @@
 # Axis X Settings
 import time
+# import keyboard
 from enum import Enum
 
 from app.cnc_programmer.rpi_board import RPiBoard
@@ -70,10 +71,12 @@ class StepperDriver:
     def __init__(self, board: RPiBoard) -> None:
         self.board = board
         self.pos_current_step = PosStep()
+        self.running = False
 
     # Move to absolute position in mm, speed in % of maximum speed
     def go(self, axis: Axis, pos_target_axis_mm: float, speed_percent: float) -> bool:
 
+        self.running = True
         axis_params: dict[str, int] = get_axis_params(axis)
 
         # convert speed from percentage to microseconds
@@ -90,16 +93,17 @@ class StepperDriver:
         # helper variable to determine whether to increment or decrement the current position
         direction: bool = delta_step > 0
         # switch the direction output
-        self.board.stepper_dir_pins[axis.value].value = direction
+        self.board.stepper_dir_pins[axis.value].value = (not direction)
 
         speed_current_us: int = axis_params['min_speed']
 
         # move by the specified number of steps
         for i in range(abs(delta_step)):
+            # break condition
+            if not self.running: return True
             # deceleration
             if (abs(delta_step) - i) <= axis_params['decc_ramp']:
-                speed_current_us = round(
-                    axis_params['min_speed'] - (axis_params['min_speed'] - axis_params['max_speed']) * (abs(delta_step) - i) / axis_params['decc_ramp'])
+                speed_current_us = round(axis_params['min_speed'] - (axis_params['min_speed'] - axis_params['max_speed']) * (abs(delta_step) - i) / axis_params['decc_ramp'])
                 # if the target speed is greater (lower in value) than the calculated speed --> use target speed
                 if speed_current_us < speed_target_us:
                     speed_current_us = speed_target_us
@@ -118,14 +122,89 @@ class StepperDriver:
             time.sleep(speed_current_us / 1000000.0)
 
             self.pos_current_step.increment(axis, 1 if direction else -1)
+        self.running = False
         return True
+
+    def move(self, axis: Axis, direction: bool):
+        self.running = True
+
+        axis_params: dict[str, int] = get_axis_params(axis)
+        speed: int = axis_params['min_speed']
+
+        self.board.stepper_dir_pins[axis.value].value = (not direction)
+        while self.running:
+            self.board.stepper_step_pins[axis.value].value = True
+            time.sleep(speed/1000000.0)
+            self.board.stepper_step_pins[axis.value].value = False
+            time.sleep(speed/1000000.0)
+
+    def go_home(self, speed_percent: float) -> bool:
+        return self.go(Axis.X, 0, speed_percent) and self.go(Axis.Y, 0, speed_percent)
+
+    def reset_pos(self) -> None:
+        self.pos_current_step.reset()
+
+
 
 
 def test():
     board = RPiBoard()
     stepper_driver = StepperDriver(board)
-    stepper_driver.go(Axis.X, -5.6, 50)
+    stepper_driver.go(Axis.X, -100, 75)
+    stepper_driver.go(Axis.Y, -100, 75)
+    stepper_driver.go(Axis.Z, 10, 30)
+    # stepper_driver.go(Axis.X, -50, 100)
+    # stepper_driver.go(Axis.X, 50, 100)
+    # stepper_driver.go(Axis.X, -50, 100)
+    # stepper_driver.go(Axis.X, 100, 100)
+    # stepper_driver.go(Axis.Y, -100, 100)
+    # stepper_driver.go(Axis.Y, 100, 100)
+    # stepper_driver.go(Axis.Z, 20, 100)
+    # stepper_driver.go(Axis.Z, -20, 100)
+    # stepper_driver.go(Axis.X, 50, 100)
+
+def test2():
+    print("TEst2")
+    board = RPiBoard()
+    axis = Axis.Y.value
+    stepper_driver = StepperDriver(board)
+    board.stepper_dir_pins[axis].value = True
+    speed_current_us = X_MIN_SPEED
+    while True:
+        board.stepper_step_pins[axis].value = True
+        time.sleep(speed_current_us / 1000000.0)
+        board.stepper_step_pins[axis].value = False
+        time.sleep(speed_current_us / 1000000.0)
+
+def test3():
+    print("TEST3")
+    board = RPiBoard()
+    axis = Axis.Y.value
+    stepper_driver = StepperDriver(board)
+
+    while True:
+        board.stepper_dir_pins[axis].value = True
+        board.stepper_step_pins[axis].value = True
+        time.sleep(2)
+        board.stepper_dir_pins[axis].value = False
+        board.stepper_step_pins[axis].value = False
+        time.sleep(2)
+
+def test_on_keyboard_input():
+    board = RPiBoard()
+    axis = Axis.Z
+    stepper_driver = StepperDriver(board)
+    stepper_driver.go(axis, 10, 100)
+
+    # keyboard.on_press_key("down", lambda _: stepper_driver.go(axis, -1.0, 100))
+    #
+    #
+    # # Keep the script running
+    # keyboard.wait("esc")  # Press "Esc" to exit the script
+    # pass
+
+
 
 
 if __name__ == "__main__":
-    test()
+    test_on_keyboard_input()

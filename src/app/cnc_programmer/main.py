@@ -1,21 +1,37 @@
 #!/usr/bin/python
+from __future__ import annotations
+
 import logging
 import getopt
 import sys
+import tkinter as tk
 
-from app.cnc_programmer.cnc_programmer import CNCProgrammer
-# from .gui import run
-from lib.config_parser import CNCProgrammerConfig
-
+from app.cnc_programmer.cnc_runner import CNCRunner
+from app.cnc_programmer.config.config import CNCProgrammerConfig
+from app.cnc_programmer.config.config_parser import CNCProgrammerConfigParser
+from app.cnc_programmer.gui.gui import GUIView, GUIController, create_root_window
 
 
 def run():
     try:
-        config: CNCProgrammerConfig = CNCProgrammerConfig(f"./resources/config_cnc_programmer.conf", "firmware_thule_two_modes", "plate_thule_4332")
-        print(config)
-        cnc_programmer = CNCProgrammer(config)
-        cnc_programmer.start_programming_dsp_plate()
-        # cnc_programmer.process_dsp()
+
+        # config: CNCProgrammerConfig = CNCProgrammerConfigParser(f"./theme/config_cnc_programmer.conf").parse_config()
+        # logging.info(f"Loaded configuration: {config}")
+
+        # initialize CNC runner
+        cnc_runner = CNCRunner()
+        cnc_runner.start()
+
+        # initialize GUI
+        root: tk.Tk = create_root_window()
+        view = GUIView(root)
+        controller = GUIController(view, cnc_runner)
+        # set controllers
+        view.set_controller(controller)
+        cnc_runner.set_controller(controller)
+
+        # run
+        root.mainloop()
 
         # gui_run()
     except KeyboardInterrupt:
