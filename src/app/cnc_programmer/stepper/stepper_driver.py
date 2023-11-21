@@ -1,10 +1,10 @@
 # Axis X Settings
 import time
-# import keyboard
-from enum import Enum
 
 from app.cnc_programmer.rpi_board import RPiBoard
 from app.cnc_programmer.stepper.position import Axis, PositionInSteps as PosStep
+
+# import keyboard
 
 # TODO: Questions
 # How are the steps per revolution and steps per mm determined
@@ -73,21 +73,28 @@ class StepperDriver:
         self.pos_current_step = PosStep()
         self.running = False
 
-    # Move to absolute position in mm, speed in % of maximum speed
-    def go(self, axis: Axis, pos_target_axis_mm: float, speed_percent: float) -> bool:
+    def get_current_pos(self) -> [int, int, int]:
+        return self.pos_current_step.pos
 
-        self.running = True
+    def get_current_pos_mm(self) -> [float, float, float]:
+        return [self.pos_current_step.to_mm(Axis.X, get_axis_params(Axis.X)['steps_per_mm']),
+                self.pos_current_step.to_mm(Axis.Y, get_axis_params(Axis.Y)['steps_per_mm']),
+                self.pos_current_step.to_mm(Axis.Z, get_axis_params(Axis.Z)['steps_per_mm'])]
+
+    # Move to absolute position in step, speed in % of maximum speed
+    def go_to_pos_step(self, axis: Axis, pos_target_axis_step: int, speed_percent: float) -> bool:
         axis_params: dict[str, int] = get_axis_params(axis)
+        delta_step: int = pos_target_axis_step - self.pos_current_step.get(axis)
+
+        # break condition
+        if delta_step == 0:
+            return True
 
         # convert speed from percentage to microseconds
         if speed_percent > 100:
             speed_percent = 100
         elif speed_percent <= 0:
             return False
-
-        # better round?
-        pos_target_axis_step: int = round(pos_target_axis_mm * axis_params['steps_per_mm'])
-        delta_step: int = pos_target_axis_step - self.pos_current_step.get(axis)
         speed_target_us: int = round((axis_params['min_speed'] - axis_params['max_speed']) * (100 - speed_percent) / 100 + axis_params['max_speed'])
 
         # helper variable to determine whether to increment or decrement the current position
@@ -122,24 +129,41 @@ class StepperDriver:
             time.sleep(speed_current_us / 1000000.0)
 
             self.pos_current_step.increment(axis, 1 if direction else -1)
-        self.running = False
         return True
 
-    def move(self, axis: Axis, direction: bool):
-        self.running = True
-
+    # Move to absolute position in mm, speed in % of maximum speed
+    def go_to_pos_mm(self, axis: Axis, pos_target_axis_mm: float, speed_percent: float) -> bool:
         axis_params: dict[str, int] = get_axis_params(axis)
-        speed: int = axis_params['min_speed']
+        pos_target_axis_step: int = round(pos_target_axis_mm * axis_params['steps_per_mm'])
+        return self.go_to_pos_step(axis, pos_target_axis_step, speed_percent)
 
-        self.board.stepper_dir_pins[axis.value].value = (not direction)
-        while self.running:
-            self.board.stepper_step_pins[axis.value].value = True
-            time.sleep(speed/1000000.0)
-            self.board.stepper_step_pins[axis.value].value = False
-            time.sleep(speed/1000000.0)
+
+    def move(self, axis: Axis, step_mm: float, speed_percent: float) -> bool:
+        axis_params: dict[str, int] = get_axis_params(axis)
+        delta_step: int = round(step_mm * axis_params['steps_per_mm'])
+        return self.go_to_pos_step(axis, self.pos_current_step.get(axis) + delta_step, speed_percent)
+
+
+    # def move(self, axis: Axis, direction: bool):
+    #
+    #     axis_params: dict[str, int] = get_axis_params(axis)
+    #     speed: int = axis_params['min_speed']
+    #
+    #     self.board.stepper_dir_pins[axis.value].value = (not direction)
+    #     while self.running:
+    #         self.board.stepper_step_pins[axis.value].value = True
+    #         time.sleep(speed/1000000.0)
+    #         self.board.stepper_step_pins[axis.value].value = False
+    #         time.sleep(speed/1000000.0)
 
     def go_home(self, speed_percent: float) -> bool:
-        return self.go(Axis.X, 0, speed_percent) and self.go(Axis.Y, 0, speed_percent)
+        if self.pos_current_step.is_home():
+            return
+        # NOTE: move to safe distance from plate
+        self.move(Axis.Z, 10, speed_percent)
+        return (self.go_to_pos_step(Axis.X, 0, speed_percent) and
+                self.go_to_pos_step(Axis.Y, 0, speed_percent) and
+                self.go_to_pos_step(Axis.Z, 0, speed_percent))
 
     def reset_pos(self) -> None:
         self.pos_current_step.reset()
@@ -150,9 +174,9 @@ class StepperDriver:
 def test():
     board = RPiBoard()
     stepper_driver = StepperDriver(board)
-    stepper_driver.go(Axis.X, -100, 75)
-    stepper_driver.go(Axis.Y, -100, 75)
-    stepper_driver.go(Axis.Z, 10, 30)
+    stepper_driver.go_to_pos_mm(Axis.X, -100, 75)
+    stepper_driver.go_to_pos_mm(Axis.Y, -100, 75)
+    stepper_driver.go_to_pos_mm(Axis.Z, 10, 30)
     # stepper_driver.go(Axis.X, -50, 100)
     # stepper_driver.go(Axis.X, 50, 100)
     # stepper_driver.go(Axis.X, -50, 100)
@@ -194,7 +218,7 @@ def test_on_keyboard_input():
     board = RPiBoard()
     axis = Axis.Z
     stepper_driver = StepperDriver(board)
-    stepper_driver.go(axis, 10, 100)
+    stepper_driver.go_to_pos_mm(axis, 10, 100)
 
     # keyboard.on_press_key("down", lambda _: stepper_driver.go(axis, -1.0, 100))
     #

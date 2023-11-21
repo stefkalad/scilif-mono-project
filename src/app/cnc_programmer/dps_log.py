@@ -102,7 +102,7 @@ class DPSLog:
 
     @property
     def operation_successful(self):
-        return self.fw_uploaded and self.led_current_mode1_passed and self.led_current_mode2_passed and self.button_led_voltage_passed
+        return self.fw_uploaded and self.led_current_mode1_passed and (self.led_current_mode2_passed if self.led_current_mode2 is not None else True) and self.button_led_voltage_passed
 
     def __str__(self):
         return f"Coordinates (x, y): ({self.x}, {self.y})\n" \

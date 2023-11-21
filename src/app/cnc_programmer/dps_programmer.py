@@ -14,7 +14,7 @@ class DPSProgrammer:
         self.firmware_path: str = ''
         self.set_config()
 
-    def set_config(self, pickle_path="~/.local/bin/n14", firmware_path="./theme/app.hex"):
+    def set_config(self, pickle_path="~/.local/bin/n14", firmware_path="./resources/app.hex"):
         self.pickle_path = pickle_path
         self.firmware_path = firmware_path
 

@@ -1,9 +1,8 @@
-import logging
 import time
+from enum import Enum
 
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
-from enum import Enum
 
 from app.cnc_programmer.rpi_board import RPiBoard
 from lib.adc import ADC, GAIN
@@ -104,36 +103,6 @@ class CNCProgrammerADC(ADC):
         chan0_voltage: float = self.measure_N_times(CNCProgrammerADC.SAMPLES_TO_AVERAGE, self.channel_button_led)
         return chan0_voltage * 1000
 
-def test():
-
-    board = RPiBoard()
-    adc = CNCProgrammerADC(board)
-
-    # shut down
-    board.dps_power_supply_pin.value = True
-    time.sleep(1)
-    # offset
-    offset_acs723 = adc.measure_voltage_on_acs723_mV()
-    print(f"ACS723 Offset: {offset_acs723:2f} mV")
-    adc.acs723_voltage_offset_mV = offset_acs723
-
-    # power up
-    board.dps_power_supply_pin.value = False
-    time.sleep(1)
-
-    print("{:>6}\t\t{:>6}\t\t{:>6}\t\t{:>6}".format('SHUNT [mV]', 'SHUNT [mA]', 'ACS723 [mV]', 'ACS723 [mA]'))
-
-    while True:
-        voltage_shunt = adc.measure_voltage_on_shunt_mV()
-        current_shunt = adc.measure_led_current_on_shunt_mA()
-
-        voltage_acs723 = adc.measure_voltage_on_acs723_mV()
-        current_acs723 = adc.measure_led_current_on_acs723_mA()
-
-        print("{:>5.3f}\t\t{:>5.3f}\t\t{:>5.3f}\t\t{:>5.3f}".format(voltage_shunt, current_shunt, voltage_acs723, current_acs723))
-        # print("{:>5.3f}\t\t{:>5.3f}\t\t{:>5.3f}\t\t{:>5.3f}".format(, chan23_D_voltage * 1000, chan23_D_current, chan3.voltage * 1000))
-        time.sleep(0.5)
-
 def test2():
 
     board = RPiBoard()
@@ -146,7 +115,7 @@ def test2():
     print(f"ACS723 Offset: {offset_acs723:2f} mV")
     adc.acs723_voltage_offset_mV = offset_acs723
     # power up
-    # board.dps_power_supply_pin.value = False
+    board.dps_power_supply_pin.value = False
     time.sleep(1)
 
     print("{:>6}\t\t{:>6}\t\t{:>6}\t\t{:>6}".format('LED [mV]', 'R_FB [mV]', 'ACS723 [mV]', 'ACS723 [mA]'))

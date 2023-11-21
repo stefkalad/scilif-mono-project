@@ -1,10 +1,8 @@
-import logging
 import time
+
 import board
 from busio import I2C
-from digitalio import Direction, DigitalInOut
-
-from app.cnc_programmer.stepper.position import Axis
+from digitalio import Direction, DigitalInOut, Pull
 
 
 class RPiBoard:
@@ -47,6 +45,7 @@ class RPiBoard:
 
         self.stepper_contacting_pin = DigitalInOut(RPiBoard.PIN_STEPPER_CONTACT)
         self.stepper_contacting_pin.direction = Direction.INPUT
+        self.stepper_contacting_pin.pull = Pull.DOWN
 
         # DPS power supply
         self.dps_power_supply_pin = DigitalInOut(RPiBoard.PIN_DPS_POWER_SUPPLY)
@@ -63,6 +62,16 @@ class RPiBoard:
 
         # Note: set button to HIGH to prevent click emulation
         self.dps_button_pin.value = True
+        # Note: set power supply pon to HIGH to not activate DPS
+        self.dps_power_supply_pin.value = True
+
+    def deinit(self) -> None:
+        self.set_stepper_pins_on_destroy()
+
+    def set_stepper_pins_on_destroy(self) -> None:
+        for pin in self.stepper_dir_pins + self.stepper_step_pins:
+            pin.direction = Direction.OUTPUT
+            pin.value = False
 
     def dps_activate(self) -> None:
         self.dps_power_supply_pin.value = False
@@ -144,7 +153,6 @@ def test_contacting():
 
     board = RPiBoard()
     while True:
-        board.dps_power_supply_pin.value = False
         print(board.stepper_contacting_pin.value)
         time.sleep(1)
 

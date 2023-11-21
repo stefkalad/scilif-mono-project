@@ -1,5 +1,5 @@
-from enum import Enum
 import unittest
+from enum import Enum
 
 
 class Axis(Enum):
@@ -24,8 +24,12 @@ class PositionInSteps:
     def increment(self, axis: Axis, increment: int) -> None:
         self.pos[axis.value] = self.pos[axis.value] + increment
 
+
     def to_mm(self, axis: Axis, steps_per_mm: int) -> float:
         return self.pos[axis.value]/steps_per_mm
+
+    def is_home(self) -> bool:
+        return self.pos == [0, 0, 0]
 
 
     def __str__(self):
