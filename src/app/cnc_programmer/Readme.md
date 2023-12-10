@@ -1,16 +1,9 @@
 Program of cycle of the SCILIF final tester.
 
 TODO List:
-
-[ ] State Machine
-
-[ ] GUI
-
-[ ] Mereni proudu - integrace ADC	
-[ ] Camera IP
-[ ] Scanner
-[ ] Display
-
+[ ] Test
+[ ] GUI dialogs translations
+[ ] GUI browse file dialog background
 
 DEVOPS
 [ ] CI/CD pipeline

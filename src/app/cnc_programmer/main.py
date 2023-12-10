@@ -7,32 +7,31 @@ import sys
 import tkinter as tk
 
 from app.cnc_programmer.cnc_runner import CNCRunner
-from app.cnc_programmer.gui.gui import GUIView, GUIController, create_root_window
-from app.cnc_programmer.gui.scrollable_frame import ScrollableFrame
+from app.cnc_programmer.gui.gui_controller import GUIController
+from app.cnc_programmer.gui.gui_view import create_root_window, GUIView
 
 
 def run():
     try:
-
-        # config: CNCProgrammerConfig = CNCProgrammerConfigParser(f"./theme/config_cnc_programmer.conf").parse_config()
-        # logging.info(f"Loaded configuration: {config}")
-
         # initialize CNC runner
         cnc_runner = CNCRunner()
-        cnc_runner.start()
 
         # initialize GUI
-
         root: tk.Tk = create_root_window()
-        view = GUIView(root, ScrollableFrame(root))
+        view = GUIView(root)
+        view.pack(fill=tk.BOTH, expand=1)
+
         controller = GUIController(view, cnc_runner)
+        view.set_controller(controller)
 
         # set controllers
         view.set_controller(controller)
         cnc_runner.set_controller(controller)
 
-        # run
         root.update()
+
+        # run
+        cnc_runner.start()
         root.mainloop()
     except KeyboardInterrupt:
         logging.debug("Keyboard interrupt catched")

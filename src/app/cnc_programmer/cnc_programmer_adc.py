@@ -1,16 +1,12 @@
+from __future__ import annotations
+
 import time
-from enum import Enum
 
 import adafruit_ads1x15.ads1115 as ADS
 from adafruit_ads1x15.analog_in import AnalogIn
 
 from app.cnc_programmer.rpi_board import RPiBoard
 from lib.adc import ADC, GAIN
-
-
-class LEDCurrentMeasurementMethod(Enum):
-    SHUNT = 0
-    ACS723 = 1
 
 
 class CNCProgrammerADC(ADC):

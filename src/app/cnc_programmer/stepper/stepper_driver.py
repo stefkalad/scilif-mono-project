@@ -4,11 +4,6 @@ import time
 from app.cnc_programmer.rpi_board import RPiBoard
 from app.cnc_programmer.stepper.position import Axis, PositionInSteps as PosStep
 
-# import keyboard
-
-# TODO: Questions
-# How are the steps per revolution and steps per mm determined
-
 # NOTES:
 # acceleration / deceleration ramp assumes movment more than 3 mm
 
@@ -76,13 +71,16 @@ class StepperDriver:
     def get_current_pos(self) -> [int, int, int]:
         return self.pos_current_step.pos
 
+    def reset_pos(self) -> None:
+        self.pos_current_step.reset()
+
     def get_current_pos_mm(self) -> [float, float, float]:
         return [self.pos_current_step.to_mm(Axis.X, get_axis_params(Axis.X)['steps_per_mm']),
                 self.pos_current_step.to_mm(Axis.Y, get_axis_params(Axis.Y)['steps_per_mm']),
                 self.pos_current_step.to_mm(Axis.Z, get_axis_params(Axis.Z)['steps_per_mm'])]
 
     # Move to absolute position in step, speed in % of maximum speed
-    def go_to_pos_step(self, axis: Axis, pos_target_axis_step: int, speed_percent: float) -> bool:
+    def go_to_pos_step(self, axis: Axis, pos_target_axis_step: int, speed_percent: float, wait_time: float = 0.0) -> bool:
         axis_params: dict[str, int] = get_axis_params(axis)
         delta_step: int = pos_target_axis_step - self.pos_current_step.get(axis)
 
@@ -104,13 +102,17 @@ class StepperDriver:
 
         speed_current_us: int = axis_params['min_speed']
 
+        # wait before start
+        time.sleep(wait_time)
+
         # move by the specified number of steps
         for i in range(abs(delta_step)):
             # break condition
             if not self.running: return True
             # deceleration
             if (abs(delta_step) - i) <= axis_params['decc_ramp']:
-                speed_current_us = round(axis_params['min_speed'] - (axis_params['min_speed'] - axis_params['max_speed']) * (abs(delta_step) - i) / axis_params['decc_ramp'])
+                speed_current_us = round(
+                    axis_params['min_speed'] - (axis_params['min_speed'] - axis_params['max_speed']) * (abs(delta_step) - i) / axis_params['decc_ramp'])
                 # if the target speed is greater (lower in value) than the calculated speed --> use target speed
                 if speed_current_us < speed_target_us:
                     speed_current_us = speed_target_us
@@ -132,11 +134,10 @@ class StepperDriver:
         return True
 
     # Move to absolute position in mm, speed in % of maximum speed
-    def go_to_pos_mm(self, axis: Axis, pos_target_axis_mm: float, speed_percent: float) -> bool:
+    def go_to_pos_mm(self, axis: Axis, pos_target_axis_mm: float, speed_percent: float, wait_time: float = 0.0) -> bool:
         axis_params: dict[str, int] = get_axis_params(axis)
         pos_target_axis_step: int = round(pos_target_axis_mm * axis_params['steps_per_mm'])
-        return self.go_to_pos_step(axis, pos_target_axis_step, speed_percent)
-
+        return self.go_to_pos_step(axis, pos_target_axis_step, speed_percent, wait_time)
 
     def move(self, axis: Axis, step_mm: float, speed_percent: float) -> bool:
         axis_params: dict[str, int] = get_axis_params(axis)
@@ -144,32 +145,12 @@ class StepperDriver:
         return self.go_to_pos_step(axis, self.pos_current_step.get(axis) + delta_step, speed_percent)
 
 
-    # def move(self, axis: Axis, direction: bool):
-    #
-    #     axis_params: dict[str, int] = get_axis_params(axis)
-    #     speed: int = axis_params['min_speed']
-    #
-    #     self.board.stepper_dir_pins[axis.value].value = (not direction)
-    #     while self.running:
-    #         self.board.stepper_step_pins[axis.value].value = True
-    #         time.sleep(speed/1000000.0)
-    #         self.board.stepper_step_pins[axis.value].value = False
-    #         time.sleep(speed/1000000.0)
-
     def go_home(self, speed_percent: float) -> bool:
         if self.pos_current_step.is_home():
-            return
-        # NOTE: move to safe distance from plate
-        self.move(Axis.Z, 10, speed_percent)
+            return True
         return (self.go_to_pos_step(Axis.X, 0, speed_percent) and
                 self.go_to_pos_step(Axis.Y, 0, speed_percent) and
                 self.go_to_pos_step(Axis.Z, 0, speed_percent))
-
-    def reset_pos(self) -> None:
-        self.pos_current_step.reset()
-
-
-
 
 def test():
     board = RPiBoard()
@@ -187,6 +168,7 @@ def test():
     # stepper_driver.go(Axis.Z, -20, 100)
     # stepper_driver.go(Axis.X, 50, 100)
 
+
 def test2():
     print("TEst2")
     board = RPiBoard()
@@ -199,6 +181,7 @@ def test2():
         time.sleep(speed_current_us / 1000000.0)
         board.stepper_step_pins[axis].value = False
         time.sleep(speed_current_us / 1000000.0)
+
 
 def test3():
     print("TEST3")
@@ -214,6 +197,7 @@ def test3():
         board.stepper_step_pins[axis].value = False
         time.sleep(2)
 
+
 def test_on_keyboard_input():
     board = RPiBoard()
     axis = Axis.Z
@@ -226,8 +210,6 @@ def test_on_keyboard_input():
     # # Keep the script running
     # keyboard.wait("esc")  # Press "Esc" to exit the script
     # pass
-
-
 
 
 if __name__ == "__main__":

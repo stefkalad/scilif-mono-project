@@ -374,27 +374,37 @@ namespace eval ttk::theme::azure-dark {
                 pressed $I(circle-hover) \
                 active $I(circle-hover) \
             ] -sticky {}
-            
-        # Tickscale
-        ttk::style element create Horizontal.TickScale.trough image $I(scale-hor) \
-            -border 5 -padding 0
-        
-        ttk::style element create Horizontal.TickScale.slider \
-            image [list $I(tick-hor-accent) \
-                disabled $I(tick-hor-basic) \
-                pressed $I(tick-hor-hover) \
-                active $I(tick-hor-hover) \
-            ] -sticky {}
-            
-        ttk::style element create Vertical.TickScale.trough image $I(scale-vert) \
-            -border 5 -padding 0
 
-        ttk::style element create Vertical.TickScale.slider \
-            image [list $I(tick-vert-accent) \
-                disabled $I(tick-vert-basic) \
-                pressed $I(tick-vert-hover) \
-                active $I(tick-vert-hover) \
-            ] -sticky {}
+        # Entry
+        ttk::style element create Entry.field \
+            image [list $I(box-basic) \
+                {focus hover} $I(box-accent) \
+                invalid $I(box-invalid) \
+                disabled $I(box-basic) \
+                focus $I(box-accent) \
+                hover $I(box-hover) \
+            ] -border 5 -padding {8} -sticky news
+
+        # Treeview
+        ttk::style element create Treeview.field image $I(card) \
+            -border 5
+
+        ttk::style element create Treeheading.cell \
+            image [list $I(tree-basic) \
+                pressed $I(tree-pressed)
+            ] -border 5 -padding 4 -sticky ewns
+
+        ttk::style element create Treeitem.indicator \
+            image [list $I(right) \
+                user2 $I(empty) \
+                user1 $I(down) \
+            ] -width 26 -sticky {}
+
+        ttk::style configure Treeview -background $colors(-bg)
+        ttk::style configure Treeview.Item -padding {2 0 0 0}
+        ttk::style map Treeview \
+            -background [list selected $colors(-selectbg)] \
+            -foreground [list selected $colors(-selectfg)]
 
         # Progressbar
         ttk::style element create Horizontal.Progressbar.trough image $I(hor-basic) \
@@ -409,15 +419,30 @@ namespace eval ttk::theme::azure-dark {
         ttk::style element create Vertical.Progressbar.pbar image $I(vert-accent) \
             -sticky ns
 
-        # Entry
-        ttk::style element create Entry.field \
-            image [list $I(box-basic) \
-                {focus hover} $I(box-accent) \
-                invalid $I(box-invalid) \
-                disabled $I(box-basic) \
-                focus $I(box-accent) \
-                hover $I(box-hover) \
-            ] -border 5 -padding {8} -sticky news
+        # Tickscale
+        ttk::style element create Horizontal.TickScale.trough image $I(scale-hor) \
+            -border 5 -padding 0
+
+        ttk::style element create Horizontal.TickScale.slider \
+            image [list $I(tick-hor-accent) \
+                disabled $I(tick-hor-basic) \
+                pressed $I(tick-hor-hover) \
+                active $I(tick-hor-hover) \
+            ] -sticky {}
+
+        ttk::style element create Vertical.TickScale.trough image $I(scale-vert) \
+            -border 5 -padding 0
+
+        ttk::style element create Vertical.TickScale.slider \
+            image [list $I(tick-vert-accent) \
+                disabled $I(tick-vert-basic) \
+                pressed $I(tick-vert-hover) \
+                active $I(tick-vert-hover) \
+            ] -sticky {}
+
+        # Panedwindow
+        # Insane hack to remove clam's ugly sash
+        ttk::style configure Sash -gripcount 0
 
         # Combobox
         ttk::style map TCombobox -selectbackground [list \
@@ -425,7 +450,7 @@ namespace eval ttk::theme::azure-dark {
             {readonly hover} $colors(-selectbg) \
             {readonly focus} $colors(-selectbg) \
         ]
-            
+
         ttk::style map TCombobox -selectforeground [list \
             {!focus} $colors(-selectfg) \
             {readonly hover} $colors(-selectfg) \
@@ -446,7 +471,7 @@ namespace eval ttk::theme::azure-dark {
                 focus $I(box-accent) \
                 hover $I(box-hover) \
             ] -border 5 -padding {8}
-            
+
         ttk::style element create Combobox.button \
             image [list $I(combo-button-basic) \
                  {!readonly focus} $I(combo-button-focus) \
@@ -479,7 +504,7 @@ namespace eval ttk::theme::azure-dark {
                 pressed $I(down-accent) \
                 active $I(down-accent) \
             ] -border 4 -width 15 -sticky e
-            
+
         ttk::style element create Spinbox.button \
             image [list $I(combo-button-basic) \
                  {!readonly focus} $I(combo-button-focus) \
@@ -503,7 +528,7 @@ namespace eval ttk::theme::azure-dark {
         # Labelframe
         ttk::style element create Labelframe.border image $I(card) \
             -border 5 -padding 4 -sticky news
-        
+
         # Notebook
         ttk::style element create Notebook.client \
             image $I(notebook) -border 5
@@ -514,30 +539,7 @@ namespace eval ttk::theme::azure-dark {
                 active $I(tab-hover) \
             ] -border 5 -padding {14 4}
 
-        # Treeview
-        ttk::style element create Treeview.field image $I(card) \
-            -border 5
 
-        ttk::style element create Treeheading.cell \
-            image [list $I(tree-basic) \
-                pressed $I(tree-pressed)
-            ] -border 5 -padding 4 -sticky ewns
-        
-        ttk::style element create Treeitem.indicator \
-            image [list $I(right) \
-                user2 $I(empty) \
-                user1 $I(down) \
-            ] -width 26 -sticky {}
-
-        ttk::style configure Treeview -background $colors(-bg)
-        ttk::style configure Treeview.Item -padding {2 0 0 0}
-        ttk::style map Treeview \
-            -background [list selected $colors(-selectbg)] \
-            -foreground [list selected $colors(-selectfg)]
-
-        # Panedwindow
-        # Insane hack to remove clam's ugly sash
-        ttk::style configure Sash -gripcount 0
 
     }
 }

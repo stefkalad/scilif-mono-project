@@ -1,6 +1,7 @@
 from app.cnc_programmer.config.config import CNCProgrammerConfig
 from app.cnc_programmer.config.firmware import FirmwareConfig
 from app.cnc_programmer.config.plate import PlateConfig
+from app.cnc_programmer.dps_mode import FirmwareType
 from lib.config_parser import CustomConfigParser
 
 
@@ -22,7 +23,8 @@ class CNCProgrammerConfigParser(CustomConfigParser):
 
         return CNCProgrammerConfig(
             self.get(CustomConfigParser.OVERALL_SECTION_NAME, "pickle_default_path"),
-            self.get(CustomConfigParser.OVERALL_SECTION_NAME, "firmware_default_path"),
+            int(self.get(CustomConfigParser.OVERALL_SECTION_NAME, "z_moving_height_mm")),
+            int(self.get(CustomConfigParser.OVERALL_SECTION_NAME, "z_minimum_safe_height_mm")),
             firmware_configs,
             plate_configs)
 
@@ -32,6 +34,8 @@ class CNCProgrammerConfigParser(CustomConfigParser):
 
         return FirmwareConfig(
             section_name.split(CustomConfigParser.FIRMWARE_SECTION_PREFIX)[1],
+            self.get(section_name, "path"),
+            FirmwareType(self.get(section_name, "type")),
             int(self.get(section_name, "button_led_mode_change_duration")),
             (
                 int(self.get(section_name, "led_current_mode1_lsl")),
@@ -44,8 +48,11 @@ class CNCProgrammerConfigParser(CustomConfigParser):
             (
                 int(self.get(section_name, "button_led_voltage_lsl")),
                 int(self.get(section_name, "button_led_voltage_usl")),
+            ),
+            (
+                int(self.get(section_name, "r_feedback_voltage_lsl")),
+                int(self.get(section_name, "r_feedback_voltage_usl")),
             )
-
         )
 
     def parse_plate_config(self, section_name: str) -> PlateConfig:

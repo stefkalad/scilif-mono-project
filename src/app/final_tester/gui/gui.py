@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
-import tkinter as tk
 import random
+import tkinter as tk
 from enum import Enum
-from tkinter import BOTH, BOTTOM, DISABLED, LEFT, NORMAL, RIGHT, TOP, X, Y, YES, ttk, messagebox, END
+from tkinter import ttk
+
+
 # from PIL import Image, ImageTk
 
 
@@ -27,7 +29,7 @@ class GUIController:
 
     def destroy(self):
         logging.info("Stopping...")
-        self.view.root.destroy()
+        self.view.root.evt_destroy()
         if self.external is not None:
             self.external.stop()
 

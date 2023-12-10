@@ -7,7 +7,8 @@ class DPSLog:
                  fw_uploaded=None, fw_upload_message=None,
                  led_current_mode1=None, led_current_mode1_passed=None,
                  led_current_mode2=None, led_current_mode2_passed=None,
-                 button_led_voltage=None, button_led_voltage_passed=None) -> None:
+                 button_led_voltage=None, button_led_voltage_passed=None,
+                 r_feedback_voltage=None, r_feedback_voltage_passed=None) -> None:
         self._x: int = x
         self._y: int = y
         self._operation_successful: bool = operation_successful
@@ -19,6 +20,8 @@ class DPSLog:
         self._led_current_mode2_passed: bool = led_current_mode2_passed
         self._button_led_voltage: float = button_led_voltage
         self._button_led_voltage_passed: bool = button_led_voltage_passed
+        self._r_feedback_voltage: float = r_feedback_voltage
+        self._r_feedback_voltage_passed: bool = r_feedback_voltage_passed
 
     @property
     def x(self) -> int:
@@ -101,8 +104,28 @@ class DPSLog:
         self._button_led_voltage = value
 
     @property
+    def r_feedback_voltage_passed(self) -> bool:
+        return self._r_feedback_voltage_passed
+
+    @r_feedback_voltage_passed.setter
+    def r_feedback_voltage_passed(self, value: bool):
+        self._r_feedback_voltage_passed = value
+
+    @property
+    def r_feedback_voltage(self) -> float:
+        return self._r_feedback_voltage
+
+    @r_feedback_voltage.setter
+    def r_feedback_voltage(self, value: float):
+        self._r_feedback_voltage = value
+
+    @property
     def operation_successful(self):
-        return self.fw_uploaded and self.led_current_mode1_passed and (self.led_current_mode2_passed if self.led_current_mode2 is not None else True) and self.button_led_voltage_passed
+        return (self.fw_uploaded and
+                self.led_current_mode1_passed and
+                (self.led_current_mode2_passed if self.led_current_mode2 is not None else True) and
+                self.button_led_voltage_passed and
+                self.r_feedback_voltage_passed)
 
     def __str__(self):
         return f"Coordinates (x, y): ({self.x}, {self.y})\n" \
@@ -111,6 +134,7 @@ class DPSLog:
                f"LED Current Mode 1: {self.led_current_mode1} (Passed: {self.led_current_mode1_passed})\n" \
                f"LED Current Mode 2: {self.led_current_mode2} (Passed: {self.led_current_mode2_passed})\n" \
                f"Button LED Voltage: {self.button_led_voltage} (Passed: {self.button_led_voltage_passed})\n" \
+               f"R Feedback Voltage: {self.r_feedback_voltage} (Passed: {self.r_feedback_voltage_passed})\n" \
                f"Operation Successful: {self.operation_successful}"
 
 
